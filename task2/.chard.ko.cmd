@@ -1,0 +1,1 @@
+cmd_/home/lweilong/Documents/cs5250-assingment3/task2/chard.ko := ld -r -m elf_x86_64 -T ./scripts/module-common.lds --build-id  -o /home/lweilong/Documents/cs5250-assingment3/task2/chard.ko /home/lweilong/Documents/cs5250-assingment3/task2/chard.o /home/lweilong/Documents/cs5250-assingment3/task2/chard.mod.o

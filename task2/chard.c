@@ -33,14 +33,18 @@ int onebyte_release(struct inode *inode, struct file *filep)
 {
      return 0; // always successful
 }
-ssize_t onebyte_read(struct file *filep, char *buf, size_t
-count, loff_t *f_pos)
-{    /*please complete the function on your own*/
-     if (copy_to_user(buf, onebyte_data, 1)) {
-          return -1;
+
+ssize_t onebyte_read(struct file *filep, char *buf, size_t count, loff_t *f_pos) {    
+     /*please complete the function on your own*/
+     if (0 == *f_pos) {
+          copy_to_user(buf, onebyte_data, 1);
+          (*f_pos)++;
+     } else {
+          return 0;
      }
      return 1;
 }
+
 ssize_t onebyte_write(struct file *filep, const char *buf, size_t count, loff_t *f_pos)
 {
      /*please complete the function on your own*/
@@ -48,7 +52,8 @@ ssize_t onebyte_write(struct file *filep, const char *buf, size_t count, loff_t 
           return -1;
      }
      if (count > 1) {
-          printk(KERN_ALERT "Write error: No space left on device\n");
+          //printk(KERN_ALERT "Write error: No space left on device\n");
+          return -ENOSPC;
      }
      return count;
 }
