@@ -31,6 +31,7 @@ struct file_operations fourmb_fops = {
 };
 
 char *fourmb_data = NULL;
+int total_size = 1;
 
 int fourmb_open(struct inode *inode, struct file *filep)
 {
@@ -46,27 +47,67 @@ ssize_t fourmb_read(struct file *filep, char *buf, size_t count, loff_t *f_pos) 
      /*
      Currntly, the device reading position is at f_pos, 
      */
+     // if (*f_pos >= DEVICE_SIZE) return 0;
+     // printk("read requested: %zu, current offset: %lld\n", count, *f_pos);
+     // int bytes_to_read = count;
+     // if (bytes_to_read > total_size - (*f_pos)) bytes_to_read = total_size - (*f_pos);
+     // if (copy_to_user(buf, fourmb_data + *(f_pos), bytes_to_read)) {
+     //      return -EFAULT;
+     // }
+     // (*f_pos) += bytes_to_read;
+     // printk("read: %d, current offset: %lld\n", bytes_to_read, *f_pos);
+     // return bytes_to_read;
      int bytes_read = 0;
-     if (*fourmb_data == 0) return 0;
+     if (*fourmb_data == 0) {
+          printk("Reached the end of file.\n");
+          return 0;
+     }
      while (count && *fourmb_data) {
           copy_to_user(buf++, fourmb_data++, sizeof(char));
           count--;
           bytes_read++;
      }
+     *f_pos = bytes_read;
+     printk("read: %d, current offset: %lld\n", bytes_read, *f_pos);
      return bytes_read;
 }
 
 ssize_t fourmb_write(struct file *filep, const char *buf, size_t count, loff_t *f_pos)
 {
-     /*please complete the function on your own*/
-     if (copy_from_user(fourmb_data, buf, 1)) {
-          return -1;
+     printk("requested: %zu, before offset: %lld\t", count, *f_pos);
+     int bytes_to_write = count;
+     if (count > DEVICE_SIZE - (*f_pos)) {
+          bytes_to_write = DEVICE_SIZE - (*f_pos);
      }
-     if (count > 1) {
-          //printk(KERN_ALERT "Write error: No space left on device\n");
-          return -ENOSPC;
+
+     if (copy_from_user(fourmb_data + (*f_pos), buf, bytes_to_write))
+     {
+          return -EFAULT;
      }
-     return count;
+
+     (*f_pos) += bytes_to_write;
+     total_size = *f_pos;
+     printk("bytes written: %d, requested: %zu, after offset: %lld\n", bytes_to_write, count, *f_pos);
+     if (bytes_to_write < count) return -ENOSPC;
+     return bytes_to_write;
+
+     // int bytes_written = 0;
+     // if (count == 0) {
+     //      printk("You can't write nothing to the driver.\n");
+     //      return 0;
+     // }
+     // while (count > 0 && ((*f_pos + bytes_written) < DEVICE_SIZE)) {
+     //      printk("count: %zu, position: %d\n", count, (*f_pos + bytes_written));
+     //      copy_from_user(fourmb_data++, buf++, sizeof(char));
+     //      count--;
+     //      bytes_written++;
+     // }
+     // if (count > 0) {
+     //      printk("written: %d, left: %zu\n", bytes_written, count);
+     //      return -ENOSPC;
+     // }
+     // printk("written: %d, current offset: %lld\n", bytes_written, *f_pos);
+     // return bytes_written;
 }
 
 static int fourmb_init(void)
