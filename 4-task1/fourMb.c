@@ -46,18 +46,14 @@ ssize_t fourmb_read(struct file *filep, char *buf, size_t count, loff_t *f_pos) 
      /*
      Currntly, the device reading position is at f_pos, 
      */
-
-     int readSize = count;
-     int bytesLeft = DEVICE_SIZE - *f_pos;
-     if (readSize > bytesLeft) readSize = bytesLeft;
-
-     if (0 == *f_pos) {
-          copy_to_user(buf, fourmb_data, 1);
-          (*f_pos)++;
-     } else {
-          return 0;
+     int bytes_read = 0;
+     if (*fourmb_data == 0) return 0;
+     while (count && *fourmb_data) {
+          copy_to_user(buf++, fourmb_data++, sizeof(char));
+          count--;
+          bytes_read++;
      }
-     return 1;
+     return bytes_read;
 }
 
 ssize_t fourmb_write(struct file *filep, const char *buf, size_t count, loff_t *f_pos)
