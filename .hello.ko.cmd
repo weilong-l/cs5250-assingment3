@@ -1,1 +1,0 @@
-cmd_/home/lweilong/Documents/cs5250-assingment3/hello.ko := ld -r -m elf_x86_64 -T ./scripts/module-common.lds --build-id  -o /home/lweilong/Documents/cs5250-assingment3/hello.ko /home/lweilong/Documents/cs5250-assingment3/hello.o /home/lweilong/Documents/cs5250-assingment3/hello.mod.o
