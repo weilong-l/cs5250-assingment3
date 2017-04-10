@@ -31,7 +31,7 @@ struct file_operations fourmb_fops = {
 };
 
 char *fourmb_data = NULL;
-int total_size = 1;
+int total_size = 0;
 
 int fourmb_open(struct inode *inode, struct file *filep)
 {
@@ -47,46 +47,49 @@ ssize_t fourmb_read(struct file *filep, char *buf, size_t count, loff_t *f_pos) 
      /*
      Currntly, the device reading position is at f_pos, 
      */
-     // if (*f_pos >= DEVICE_SIZE) return 0;
-     // printk("read requested: %zu, current offset: %lld\n", count, *f_pos);
-     // int bytes_to_read = count;
-     // if (bytes_to_read > total_size - (*f_pos)) bytes_to_read = total_size - (*f_pos);
-     // if (copy_to_user(buf, fourmb_data + *(f_pos), bytes_to_read)) {
-     //      return -EFAULT;
+     printk("read requested: %zu, current offset: %lld\n", count, *f_pos);
+     
+     if (*f_pos >= DEVICE_SIZE) return 0;
+     
+     int bytes_to_read = count;
+     if (bytes_to_read > total_size - (*f_pos)) bytes_to_read = total_size - (*f_pos);
+     
+     if (copy_to_user(buf, fourmb_data + *(f_pos), bytes_to_read)) {
+          return -EFAULT;
+     }
+     (*f_pos) += bytes_to_read;
+
+     printk("read: %d, current offset: %lld\n", bytes_to_read, *f_pos);
+     return bytes_to_read;
+     // int bytes_read = 0;
+     // if (*fourmb_data == 0) {
+     //      printk("Reached the end of file.\n");
+     //      return 0;
      // }
-     // (*f_pos) += bytes_to_read;
-     // printk("read: %d, current offset: %lld\n", bytes_to_read, *f_pos);
-     // return bytes_to_read;
-     int bytes_read = 0;
-     if (*fourmb_data == 0) {
-          printk("Reached the end of file.\n");
-          return 0;
-     }
-     while (count && *fourmb_data) {
-          copy_to_user(buf++, fourmb_data++, sizeof(char));
-          count--;
-          bytes_read++;
-     }
-     *f_pos = bytes_read;
-     printk("read: %d, current offset: %lld\n", bytes_read, *f_pos);
-     return bytes_read;
+     // while (count && *fourmb_data) {
+     //      copy_to_user(buf++, fourmb_data++, sizeof(char));
+     //      count--;
+     //      bytes_read++;
+     // }
+     // *f_pos = bytes_read;
+     // printk("read: %d, current offset: %lld\n", bytes_read, *f_pos);
+     // return bytes_read;
 }
 
 ssize_t fourmb_write(struct file *filep, const char *buf, size_t count, loff_t *f_pos)
 {
      printk("requested: %zu, before offset: %lld\t", count, *f_pos);
      int bytes_to_write = count;
-     if (count > DEVICE_SIZE - (*f_pos)) {
+     if (bytes_to_write > (DEVICE_SIZE - (*f_pos))) {
           bytes_to_write = DEVICE_SIZE - (*f_pos);
      }
 
-     if (copy_from_user(fourmb_data + (*f_pos), buf, bytes_to_write))
-     {
+     if (copy_from_user(fourmb_data + (*f_pos), buf, bytes_to_write)) {
           return -EFAULT;
      }
 
      (*f_pos) += bytes_to_write;
-     total_size = *f_pos;
+     if (total_size < (*f_pos)) total_size = (*f_pos); //total_size = *f_pos;
      printk("bytes written: %d, requested: %zu, after offset: %lld\n", bytes_to_write, count, *f_pos);
      if (bytes_to_write < count) return -ENOSPC;
      return bytes_to_write;
@@ -134,6 +137,7 @@ static int fourmb_init(void)
 
      // initialize the value to be X
      *fourmb_data = 'X';
+     total_size = 1;
 
      printk(KERN_ALERT "This is a fourmb device module\n");
      return 0;
@@ -145,7 +149,8 @@ static void fourmb_exit(void)
      if (fourmb_data) {
           // free the memory and assign the pointer to NULL
           kfree(fourmb_data);
-     }    fourmb_data = NULL;
+     }    
+     fourmb_data = NULL;
      // unregister the device
      unregister_chrdev(MAJOR_NUMBER, "fourmb");
      printk(KERN_ALERT "fourmb device module is unloaded\n");
