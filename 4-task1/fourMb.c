@@ -14,24 +14,66 @@
 
 int currentPostionRead = 0;
 int currentPostionWrite = 0;
+
+#define SCULL_IOC_MAGIC 'k'
+#define SCULL_IOC_MAXNR 4
+#define SCULL_HELLO _IO(SCULL_IOC_MAGIC, 1)
+#define SCULL_SETMSG _IOW(SCULL_IOC_MAGIC, 2, char *)
+#define SCULL_GETMSG _IOR(SCULL_IOC_MAGIC, 3, char *)
+#define SCULL_SET_GETMSG _IOWR(SCULL_IOC_MAGIC, 4, char *)
+
+/* Set the message of the device driver */
+// #define IOCTL_SET_MSG _IOR(MAJOR_NUM, 0, char *)
+/* _IOR means that we're creating an ioctl command 
+ * number for passing information from a user process
+ * to the kernel module. 
+ *
+ * The first arguments, MAJOR_NUM, is the major device 
+ * number we're using.
+ *
+ * The second argument is the number of the command 
+ * (there could be several with different meanings).
+ *
+ * The third argument is the type we want to get from 
+ * the process to the kernel.
+ */
+
+/* Get the message of the device driver */
+// #define IOCTL_GET_MSG _IOR(MAJOR_NUM, 1, char *)
+ /* This IOCTL is used for output, to get the message 
+  * of the device driver. However, we still need the 
+  * buffer to place the message in to be input, 
+  * as it is allocated by the process.
+  */
+
+
+/* Get the n'th byte of the message */
+// #define IOCTL_GET_NTH_BYTE _IOWR(MAJOR_NUM, 2, int)
+ /* The IOCTL is used for both input and output. It 
+  * receives from the user a number, n, and returns 
+  * Message[n]. */
+char *fourmb_data = NULL;
+int total_size = 0;
+static char dev_msg[DEVICE_SIZE];
  
 /* forward declaration */
 int fourmb_open(struct inode *inode, struct file *filep);
 int fourmb_release(struct inode *inode, struct file *filep);
 ssize_t fourmb_read(struct file *filep, char *buf, size_t count, loff_t *f_pos);
 ssize_t fourmb_write(struct file *filep, const char *buf, size_t count, loff_t *f_pos);
+loff_t fourmb_lseek(struct file *filp, loff_t off, int whence);
 static void fourmb_exit(void);
+long fourmb_ioctl(struct file *file, unsigned int ioctl_num, unsigned long ioctl_param);
 
 /* definition of file_operation structure */
 struct file_operations fourmb_fops = {
      read:     fourmb_read,
      write:    fourmb_write,
      open:     fourmb_open,
-     release: fourmb_release
+     release: fourmb_release,
+     llseek: fourmb_lseek,
+     unlocked_ioctl : fourmb_ioctl
 };
-
-char *fourmb_data = NULL;
-int total_size = 0;
 
 int fourmb_open(struct inode *inode, struct file *filep)
 {
@@ -61,19 +103,6 @@ ssize_t fourmb_read(struct file *filep, char *buf, size_t count, loff_t *f_pos) 
 
      printk("read: %d, current offset: %lld\n", bytes_to_read, *f_pos);
      return bytes_to_read;
-     // int bytes_read = 0;
-     // if (*fourmb_data == 0) {
-     //      printk("Reached the end of file.\n");
-     //      return 0;
-     // }
-     // while (count && *fourmb_data) {
-     //      copy_to_user(buf++, fourmb_data++, sizeof(char));
-     //      count--;
-     //      bytes_read++;
-     // }
-     // *f_pos = bytes_read;
-     // printk("read: %d, current offset: %lld\n", bytes_read, *f_pos);
-     // return bytes_read;
 }
 
 ssize_t fourmb_write(struct file *filep, const char *buf, size_t count, loff_t *f_pos)
@@ -93,24 +122,116 @@ ssize_t fourmb_write(struct file *filep, const char *buf, size_t count, loff_t *
      printk("bytes written: %d, requested: %zu, after offset: %lld\n", bytes_to_write, count, *f_pos);
      if (bytes_to_write < count) return -ENOSPC;
      return bytes_to_write;
+}
 
-     // int bytes_written = 0;
-     // if (count == 0) {
-     //      printk("You can't write nothing to the driver.\n");
-     //      return 0;
-     // }
-     // while (count > 0 && ((*f_pos + bytes_written) < DEVICE_SIZE)) {
-     //      printk("count: %zu, position: %d\n", count, (*f_pos + bytes_written));
-     //      copy_from_user(fourmb_data++, buf++, sizeof(char));
-     //      count--;
-     //      bytes_written++;
-     // }
-     // if (count > 0) {
-     //      printk("written: %d, left: %zu\n", bytes_written, count);
-     //      return -ENOSPC;
-     // }
-     // printk("written: %d, current offset: %lld\n", bytes_written, *f_pos);
-     // return bytes_written;
+loff_t fourmb_lseek(struct file *filp, loff_t off, int whence) {
+     loff_t newpos;
+
+     switch(whence) {
+          case 0: /* SEEK_SET */
+               newpos = off;
+               break;
+
+          case 1: /* SEEK_CUR */
+               newpos = filp->f_pos + off;
+               break;
+
+          case 2: /* SEEK_END */
+               newpos = total_size + off;
+               break;
+
+          default: /* can't happen */
+               return -EINVAL;
+     }
+     if (newpos < 0) return -EINVAL;
+     filp->f_pos = newpos;
+     return newpos;
+}
+
+long fourmb_ioctl(struct file *file, unsigned int ioctl_num, unsigned long ioctl_param){
+     int err = 0;
+     int retval = 0;
+     
+     /*
+     * extract the type and number bitfields, and don't decode
+     * wrong cmds: return ENOTTY (inappropriate ioctl) before access_ok()
+     */
+
+     if (_IOC_TYPE(ioctl_num) != SCULL_IOC_MAGIC) return -ENOTTY;
+     if (_IOC_NR(ioctl_num) > SCULL_IOC_MAXNR) return -ENOTTY;
+
+     /*
+     * the direction is a bitmask, and VERIFY_WRITE catches R/W
+     * transfers. 'Type' is user‐oriented, while
+     * access_ok is kernel‐oriented, so the concept of "read" and
+     * "write" is reversed
+     */
+     
+     if (_IOC_DIR(ioctl_num) & _IOC_READ)
+          err = !access_ok(VERIFY_WRITE, (void __user *)ioctl_param, _IOC_SIZE(ioctl_num));
+     else if (_IOC_DIR(ioctl_num) & _IOC_WRITE)
+          err = !access_ok(VERIFY_READ, (void __user *)ioctl_param, _IOC_SIZE(ioctl_num));
+
+     if (err) return -EFAULT;
+     
+     int i;
+     char ch;
+     char *temp;
+     char *tmp;
+
+     /* Switch according to the ioctl called */
+     switch (ioctl_num) {
+          case SCULL_HELLO:
+               printk(KERN_WARNING "hello\n");
+               break;
+          case SCULL_SETMSG:
+               /* Receive a pointer to a message (in user space) 
+               * and set that to be the device's message. */ 
+
+               /* Get the parameter given to ioctl by the process */
+               temp = (char *) ioctl_param;
+   
+               /* Find the length of the message */
+               get_user(ch, temp);
+               for (i=0; ch && i<DEVICE_SIZE; i++, temp++)
+                    get_user(ch, temp);
+               if (copy_from_user(dev_msg, (char *) ioctl_param, i)) {
+                    return -EFAULT;
+               }
+               printk(KERN_WARNING "Set device msg to %s\n", dev_msg);
+               break;
+          case SCULL_GETMSG:
+               /* Give the current message to the calling 
+               * process - the parameter we got is a pointer, 
+               * fill it. */
+               // i = device_read(file, (char *) ioctl_param, 99, 0); 
+               if (copy_to_user((char *) ioctl_param, dev_msg, DEVICE_SIZE)) {
+                    return -EFAULT;
+               }
+
+               /* Put a zero at the end of the buffer, so it 
+               * will be properly terminated */
+               put_user('\0', (char *) ioctl_param+i);
+               break;
+          
+          case SCULL_SET_GETMSG:
+               /* This ioctl is both input (ioctl_param) and 
+               * output (the return value of this function) */
+               if (copy_from_user(tmp, (char *) ioctl_param, DEVICE_SIZE)) {
+                    return -EFAULT;
+               }
+               printk(KERN_WARNING "set new device msg to %s", tmp);
+               if (copy_to_user((char *) ioctl_param, dev_msg, DEVICE_SIZE)) {
+                    return -EFAULT;
+               }
+               printk(KERN_WARNING "get old device msg as %s\n", dev_msg);
+               // put_user('\0', (char *) ioctl_param+i);
+               break;
+          default:
+               return -ENOTTY;
+  }
+
+  return retval;
 }
 
 static int fourmb_init(void)
