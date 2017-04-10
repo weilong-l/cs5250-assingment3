@@ -1,0 +1,1 @@
+cmd_/home/lweilong/Share/cs5250-assingment3/4-task1/fourMb.ko := ld -r -m elf_x86_64 -T ./scripts/module-common.lds --build-id  -o /home/lweilong/Share/cs5250-assingment3/4-task1/fourMb.ko /home/lweilong/Share/cs5250-assingment3/4-task1/fourMb.o /home/lweilong/Share/cs5250-assingment3/4-task1/fourMb.mod.o
